@@ -1,9 +1,12 @@
-"""Code from the example in odl/examples/solvers/find_optimal_parameters.py
-for finding optimal regularization parameters."""
+"""Code from different parts of odl."""
 
 import numpy as np
 import scipy
+import odl
 
+
+# Code from the example in odl/examples/solvers/find_optimal_parameters.py
+# for finding optimal regularization parameters.
 def optimal_parameters(reconstruction, fom, phantoms, data,
                        initial_param=0):
     """Find the optimal parameters for a reconstruction method.
@@ -74,3 +77,53 @@ def optimal_parameters(reconstruction, fom, phantoms, data,
                                                 ftol=tol,
                                                 disp=False)
         return parameters
+
+
+# The MSE fom
+def mean_squared_error(data, ground_truth, mask=None, normalized=False):
+    """Return L2-distance between ``data`` and ``ground_truth``.
+    Evaluates `mean squared error
+    <https://en.wikipedia.org/wiki/Mean_squared_error>`_ between
+    input (``data``) and reference (``ground_truth``) Allows for normalization
+    (``normalized``) and a masking of the two spaces (``mask``).
+    Notes
+    ----------
+    The FOM evaluates
+    .. math::
+        \| f - g \|^2_2,
+    or, in normalized form
+    .. math::
+        \\frac{\| f - g \|^2_2}{\| f \|^2_2 + \| g \|^2_2}.
+    The normalized FOM takes values in [0, 1].
+    Parameters
+    ----------
+    data : `FnBaseVector`
+        Input data or reconstruction.
+    ground_truth : `FnBaseVector`
+        Reference to compare ``data`` to.
+    mask : `FnBaseVector`, optional
+        Mask to define ROI in which FOM evaluation is performed. The mask is
+        allowed to be weighted (i.e. non-binary), see ``blurring`` and
+        ``false_structures.``
+    normalized  : bool, optional
+        Boolean flag to switch between unormalized and normalized FOM.
+    Returns
+    -------
+    fom : float
+        Scalar (float) indicating mean squared error between ``data`` and
+        ``ground_truth``. In normalized form the FOM takes values in
+        [0, 1], with higher correspondance at lower FOM value.
+    """
+    l2_normSquared = odl.solvers.L2NormSquared(data.space)
+
+    if mask is not None:
+        data = data * mask
+        ground_truth = ground_truth * mask
+
+    diff = data - ground_truth
+    fom = l2_normSquared(diff)
+
+    if normalized:
+            fom /= (l2_normSquared(data) + l2_normSquared(ground_truth))
+
+    return fom

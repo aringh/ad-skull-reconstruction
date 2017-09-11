@@ -3,13 +3,12 @@ TV reconstruction example for simulated Skull CT data
 """
 
 import odl
-import odl.contrib.fom as fom
+# import odl.contrib.fom as fom
 import numpy as np
 import os
 import adutils
 
-from Huber_func import HuberNorm
-from opt_param import optimal_parameters
+from opt_param import optimal_parameters, mean_squared_error
 
 # Discretization
 reco_space = adutils.get_discretization(use_2D=True)
@@ -42,33 +41,44 @@ print('Norm of the product space operator: {}'.format(op_norm))
 huber_epsilon = 0.01
 
 
-def huber_reconstruction(proj_data, lam):
-    """Defines the Huber norm reconstruction."""
-    # Transform to make reg.param. always positive
-    lam = float(lam)
-    lam = np.exp(lam)
-    print('lam = {}'.format(lam))
+def huber_reconstruction(proj_data, parameters):
+    # Extract the separate parameters
+    lam, sigma = parameters
+    lam=np.exp(lam)
+    sigma=np.exp(sigma)
+    print('lam = {}, sigma = {}'.format(lam, sigma))
 
-    g = odl.solvers.ZeroFunctional(op.domain)
+    # We do not allow negative parameters, so return a bogus result
+    if lam <= 0 or sigma <= 0:
+        return np.inf * A.range.one()
 
-    l2_norm = odl.solvers.L2NormSquared(A.range).translated(proj_data)
-    l1_norm = lam * HuberNorm(space=gradient.range, epsilon=huber_epsilon)
-    f = odl.solvers.SeparableSum(l2_norm, l1_norm)
+    # Create data term ||Ax - b||_2^2
+    l2_norm = odl.solvers.L2NormSquared(A.range)
+    data_discrepancy = l2_norm * (A - proj_data)
 
-    # Select solver parameters
-    niter = 1000  # Number of iterations
-    tau = 1.0 / op_norm  # Step size for the primal variable
-    sigma = 1.0 / op_norm  # Step size for the dual variable
-    gamma = 0.3
+    # Create regularizing functional huber(|grad(x)|)
+    l1_norm = odl.solvers.GroupL1Norm(gradient.range)
+    smoothed_l1 = odl.solvers.MoreauEnvelope(l1_norm, sigma=sigma)
+    regularizer = smoothed_l1 * gradient
+
+    # Create full objective functional
+    obj_fun = data_discrepancy + lam * regularizer
+
+    # Pick parameters
+    maxiter = 100
+    num_store = 5
 
     # Run the algorithm - initialize with FBP
     x = adutils.get_initial_guess(reco_space)
-    odl.solvers.chambolle_pock_solver(
-        x, f, g, op, tau=tau, sigma=sigma, niter=niter, gamma=gamma)
+    odl.solvers.bfgs_method(
+        obj_fun, x, maxiter=maxiter, num_store=num_store,
+        hessinv_estimate=odl.ScalingOperator(
+                reco_space, 1 / odl.power_method_opnorm(A) ** 2))
 
     return x
 
-initial_param = 0.1
+
+initial_param = [-2, -3]
 
 # Data to train on
 phantoms = []
@@ -83,7 +93,7 @@ mask = ((labels == 3) | (labels == 2))
 
 def my_fom(I0, I1):
     """ I0 is ground truth, I1 is reconstruction."""
-    return fom.mean_square_error(I0, I1, mask=mask, normalize=True)
+    return mean_squared_error(I0, I1, mask=mask, normalized=True)
 
 # Find optimal lambda
 optimal_param = optimal_parameters(huber_reconstruction, my_fom, phantoms,
