@@ -101,7 +101,7 @@ optimal_param = optimal_parameters(huber_reconstruction, my_fom, phantoms,
 
 # Make a reconstruction with the optimal parameter
 x_reco = huber_reconstruction(rhs, optimal_param)
-
+x_reco.show(clim=[0.018, 0.022])
 
 # Run such that last iteration is saved (saveReco = 1) or none (saveReco = 0)
 saveReco = False

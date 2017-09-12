@@ -32,47 +32,59 @@ op_norm = 1.1 * np.sqrt(len(A.operators)*(Anorm**2) + Dnorm**2)
 
 print('Norm of the product space operator: {}'.format(op_norm))
 
-lamb = 0.005  # l2NormGrad/l1NormGrad = 0.01
 
-# l2-squared data matching
-l2_norm = odl.solvers.L2NormSquared(A.range).translated(rhs)
+# Define the reoncstruction procedure
+def huber_reconstruction(proj_data, parameters):
+    # Extract the separate parameters
+    lam, sigma = parameters
+    lam=np.exp(lam)
+    sigma=np.exp(sigma)
+    print('lam = {}, sigma = {}'.format(lam, sigma))
 
-# Isotropic TV-regularization i.e. the l1-norm
-l1_norm = lamb * odl.solvers.L1Norm(gradient.range)
+    # We do not allow negative parameters, so return a bogus result
+    if lam <= 0 or sigma <= 0:
+        return np.inf * A.range.one()
 
-# Combine functionals
-f = odl.solvers.SeparableSum(l2_norm, l1_norm)
+    # Create data term ||Ax - b||_2^2
+    l2_norm = odl.solvers.L2NormSquared(A.range)
+    data_discrepancy = l2_norm * (A - proj_data)
 
-# Set g functional to zero
-g = odl.solvers.ZeroFunctional(op.domain)
+    # Create regularizing functional huber(|grad(x)|)
+    l1_norm = odl.solvers.GroupL1Norm(gradient.range)
+    smoothed_l1 = odl.solvers.MoreauEnvelope(l1_norm, sigma=sigma)
+    regularizer = smoothed_l1 * gradient
 
-# Accelerataion parameter
-gamma = 0.4
+    # Create full objective functional
+    obj_fun = data_discrepancy + lam * regularizer
 
-# Step size for the proximal operator for the primal variable x
-tau = 1.0 / op_norm
+    # Pick parameters
+    maxiter = 100
+    num_store = 5
 
-# Step size for the proximal operator for the dual variable y
-sigma = 1.0 / op_norm  # 1.0 / (op_norm ** 2 * tau)
+    # Run the algorithm - initialize with FBP
+    x = adutils.get_initial_guess(reco_space)
+    callback = odl.solvers.CallbackPrintIteration()
+    odl.solvers.bfgs_method(
+        obj_fun, x, maxiter=maxiter, num_store=num_store,
+        hessinv_estimate=odl.ScalingOperator(
+                reco_space, 1 / odl.power_method_opnorm(A) ** 2),
+        callback=callback)
 
-# Reconstruct
-callbackShowReco = (odl.solvers.CallbackPrintIteration() &  # Print iterations
-                    odl.solvers.CallbackShow(coords=[None, 0, None]) &  # Show parital reconstructions
-                    odl.solvers.CallbackShow(coords=[0, None, None]) &
-                    odl.solvers.CallbackShow(coords=[None, None, 60]))
+    return x
 
-callbackPrintIter = odl.solvers.CallbackPrintIteration()
 
-# Use initial guess
-x = adutils.get_initial_guess(reco_space)
+# Optimally selected parameters from 2D-code. Observe the transformation in the
+# reconstruction algorithm
+lamb = -2.23695027
+huber_epsilon = -2.99999541
+param = [lamb, huber_epsilon]
 
-# Run such that last iteration is saved (saveReco = 1) or none (saveReco = 0)
-saveReco = False
-savePath = '/home/user/Simulated/120kV/'
-niter = 100
-odl.solvers.chambolle_pock_solver(x, f, g, op, tau=tau, sigma = sigma,
-				  niter = niter, gamma=gamma, callback=callbackPrintIter)
+# Do the reconstruction
+x_reco = huber_reconstruction(rhs, param)
+
+saveReco = True
+savePath = '/home/aringh/git/ad-skull-reconstruction/data/Simulated/120kV/'
+
 if saveReco:
-    saveName = os.path.join(savePath,'reco/Reco_HelicalSkullCT_70100644Phantom_no_bed_Dose150mGy_TV_' +
-                                          str(niter) + 'iterations.npy')
-    adutils.save_image(x, saveName)
+    saveName = os.path.join(savePath,'reco/Reco_HelicalSkullCT_70100644Phantom_no_bed_Dose150mGy_Huber.npy')
+    adutils.save_image(x_reco, saveName)
