@@ -7,6 +7,9 @@ import numpy as np
 import os
 import adutils
 
+savePath = '/home/aringh/git/ad-skull-reconstruction/data/Simulated/120kV/reco/'
+print('The save path exists = {}'.format(os.path.exists(savePath)))
+
 # Discretization
 reco_space = adutils.get_discretization()
 
@@ -83,8 +86,8 @@ param = [lamb, huber_epsilon]
 x_reco = huber_reconstruction(rhs, param)
 
 saveReco = True
-savePath = '/home/aringh/git/ad-skull-reconstruction/data/Simulated/120kV/'
+# savePath = '/home/aringh/git/ad-skull-reconstruction/data/Simulated/120kV/reco/'
 
 if saveReco:
-    saveName = os.path.join(savePath,'reco/Reco_HelicalSkullCT_70100644Phantom_no_bed_Dose150mGy_Huber.npy')
+    saveName = os.path.join(savePath,'Reco_HelicalSkullCT_70100644Phantom_no_bed_Dose150mGy_Huber')
     adutils.save_image(x_reco, saveName)
